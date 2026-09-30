@@ -288,6 +288,12 @@ class Gate:
                 return self._reply(conn, 401, "text/plain", b"Join first.")
 
             sid = member["id"]
+            # A bare address should land somewhere useful, not on the workspace
+            # server's own root (for the desktop that's a raw file listing).
+            if method == "GET" and parts.path == "/" and not parts.query and "upgrade" not in headers:
+                if not self.spaces.upstream_port(sid):
+                    return self._reply(conn, 303, "text/plain", b"", {"Location": PREFIX + "home"})
+                return self._reply(conn, 303, "text/plain", b"", {"Location": self._entry_url(member, None)})
             port = self.spaces.upstream_port(sid)
             if not port:
                 if method == "GET" and "upgrade" not in headers:
@@ -381,7 +387,7 @@ class Gate:
 <form method="post" action="{PREFIX}join">
 <label>Your name</label><input name="name" value="{html.escape(name)}" autocomplete="off" autocapitalize="none" spellcheck="false" required>
 <label>Room PIN</label><input name="pin" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD-2345">
-<label>Resume code <span class="dim">(only if you've joined before)</span></label>
+<label>Resume code <span class="dim">(only if you've joined before; lost it? ask whoever gave you the PIN)</span></label>
 <input name="resume" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX">
 <button class="full" type="submit">Join</button>{err}</form>
 <p class="foot">Certificate warning, or previews not loading? Trust this server's certificate once on this device: <a href="http://{html.escape(self.lan_ip())}:{TRUST_PORT}/">how</a>.</p>"""
@@ -406,7 +412,7 @@ class Gate:
 <div class="acts" style="justify-content:flex-start"><a class="btn" href="{PREFIX}open">Open my {label}</a>
 <a class="btn ghost" href="{PREFIX}download">Download everything</a></div>
 <h2>Starter files</h2>{rows}
-<form method="post" action="{PREFIX}logout" style="margin-top:18px"><button class="ghost" type="submit">Sign out</button></form>"""
+<form method="post" action="{PREFIX}logout" style="margin-top:18px" onsubmit="return confirm('Sign out? To get back into your workspace you will need your resume code.')"><button class="ghost" type="submit">Sign out</button></form>"""
         return self._page(conn, 200, "CodeGate", body)
 
     # ------------------------------------------------------------ endpoints
@@ -482,12 +488,7 @@ workspace back from another browser or device. It won't be shown again.</p>
                                   f'<h1>Not ready yet</h1><p class="sub">{html.escape(str(e))}</p>'
                                   f'<a class="btn" href="{html.escape(parts.path)}?{html.escape(parts.query)}">Try again</a> '
                                   f'<a class="btn ghost" href="{PREFIX}home">Back</a>')
-            if member["kind"] == "desktop":
-                dest = "/vnc.html?autoconnect=true&resize=remote&reconnect=true"
-            else:
-                folder = f"/home/{member['name']}/work" + (f"/{slug}" if slug else "")
-                dest = "/?folder=" + urllib.parse.quote(folder)
-            return self._reply(conn, 303, "text/plain", b"", {"Location": dest})
+            return self._reply(conn, 303, "text/plain", b"", {"Location": self._entry_url(member, slug)})
 
         if action == "download":
             return self._download(conn, member, query.get("starter"))
@@ -503,6 +504,14 @@ workspace back from another browser or device. It won't be shown again.</p>
                 "Location": PREFIX + "home?notice=" + urllib.parse.quote(f"{form.get('starter')} was reset.")})
 
         return self._reply(conn, 404, "text/plain", b"Not found")
+
+    @staticmethod
+    def _entry_url(member, slug):
+        """Where a running workspace is opened."""
+        if member["kind"] == "desktop":
+            return "/vnc.html?autoconnect=true&resize=remote&reconnect=true"
+        folder = f"/home/{member['name']}/work" + (f"/{slug}" if slug else "")
+        return "/?folder=" + urllib.parse.quote(folder)
 
     def _download(self, conn, member, slug):
         try:

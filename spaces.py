@@ -262,7 +262,7 @@ class Spaces:
             if existing:
                 if not resume:
                     self._fail(ip)
-                    raise SpacesError("That name is taken. If it's yours, enter your resume code too.")
+                    raise SpacesError("That name is taken. If it's yours, enter your resume code too (lost it? ask whoever gave you the PIN).")
                 for s in existing:
                     if not s.get("disabled") and hmac.compare_digest(self._hash(resume, s["salt"]), s["resume_hash"]):
                         s["last_seen"], s["ip"] = time.time(), ip
@@ -279,7 +279,7 @@ class Spaces:
             if len(self.joins) >= 60:
                 raise SpacesError("Too many people joined in the last hour. Ask the owner.")
             self.joins.append(now)
-            code = "-".join("".join(secrets.choice(PIN_ALPHABET) for _ in range(4)) for _ in range(3))
+            code = self._make_code()
             salt = secrets.token_hex(8)
             sid = self._sid(kind, name)
             self.state["members"][sid] = {
@@ -290,6 +290,24 @@ class Spaces:
             self._save()
         self.log(f"{name} joined {kind}", ip)
         return sid, code
+
+    @staticmethod
+    def _make_code():
+        return "-".join("".join(secrets.choice(PIN_ALPHABET) for _ in range(4)) for _ in range(3))
+
+    def new_resume_code(self, sid):
+        """For a member who lost theirs: the owner generates a fresh one (the old
+        stops working) and hands it over. The workspace itself is untouched."""
+        with self.lock:
+            m = self.state["members"].get(sid)
+            if not m:
+                raise SpacesError("Unknown member.")
+            code = self._make_code()
+            m["salt"] = secrets.token_hex(8)
+            m["resume_hash"] = self._hash(code.replace("-", ""), m["salt"])
+            self._save()
+        self.log(f"{m['name']} resume code reset")
+        return code
 
     def member(self, sid):
         with self.lock:

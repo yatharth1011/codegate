@@ -21,6 +21,12 @@ RUN add-apt-repository -y ppa:mozillateam/ppa \
     && apt-get update && apt-get install -y --no-install-recommends firefox \
     && rm -rf /var/lib/apt/lists/*
 
+# What makes it look like Ubuntu: the Ubuntu font, the release wallpapers, and a
+# menu plugin for the "Activities" button (the Yaru theme itself is above).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      fonts-ubuntu ubuntu-wallpapers-noble xfce4-whiskermenu-plugin \
+    && rm -rf /var/lib/apt/lists/*
+
 # Firefox's own content sandbox needs kernel features the locked-down container (no capabilities)
 # deliberately lacks; the container itself is the sandbox.
 ENV MOZ_DISABLE_CONTENT_SANDBOX=1 MOZ_DISABLE_GMP_SANDBOX=1

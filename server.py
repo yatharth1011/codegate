@@ -151,6 +151,9 @@ so trusting it can't be used to impersonate real websites.</p>
                 SPACES.start_runtime()
             elif action == "build_image":
                 SPACES.build_image(data.get("kind"))
+            elif action == "reset_code":
+                code = SPACES.new_resume_code(data.get("id"))
+                return {**self._status(), "code": code, "name": SPACES.member(data.get("id"))["name"]}
             elif action == "export":
                 ids = ([m["id"] for m in SPACES.status()["members"]] if data.get("id") == "*" else [data.get("id")])
                 saved = [SPACES.export_member(i, data.get("starter") or None, COLLECTED_DIR) for i in ids
