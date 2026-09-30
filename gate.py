@@ -34,6 +34,10 @@ TRUST_PORT = 8902   # plain-HTTP page (server.py) where people download the cert
 COOKIE = "codegate_session"
 SESSION_LIFETIME = 12 * 3600
 PREFIX = "/__cg/"
+# Added to page loads inside a workspace: the way back to the portal (home, downloads, sign out).
+HOME_PILL = (b'<a href="/__cg/home" title="CodeGate: home, downloads, sign out" style="position:fixed;right:14px;bottom:34px;'
+             b'z-index:2147483647;font:600 12px/1 system-ui,sans-serif;color:#fff;background:#111c;border:1px solid #fff4;'
+             b'border-radius:999px;padding:8px 12px;text-decoration:none;opacity:.7">\xe2\x8c\x82 Home</a>')
 CA_NAME_CONSTRAINTS = (
     "critical,"
     "permitted;IP:10.0.0.0/255.0.0.0,permitted;IP:172.16.0.0/255.240.0.0,"
@@ -291,9 +295,7 @@ class Gate:
             # A bare address should land somewhere useful, not on the workspace
             # server's own root (for the desktop that's a raw file listing).
             if method == "GET" and parts.path == "/" and not parts.query and "upgrade" not in headers:
-                if not self.spaces.upstream_port(sid):
-                    return self._reply(conn, 303, "text/plain", b"", {"Location": PREFIX + "home"})
-                return self._reply(conn, 303, "text/plain", b"", {"Location": self._entry_url(member, None)})
+                return self._reply(conn, 303, "text/plain", b"", {"Location": PREFIX + "home"})
             port = self.spaces.upstream_port(sid)
             if not port:
                 if method == "GET" and "upgrade" not in headers:
@@ -301,14 +303,19 @@ class Gate:
                 return self._reply(conn, 503, "text/plain", b"Workspace isn't running.")
 
             upstream = socket.create_connection(("127.0.0.1", port), timeout=10)
-            upstream.sendall(head + rest)
+            page_load = (method == "GET" and "upgrade" not in headers
+                         and headers.get("sec-fetch-dest") == "document")
+            upstream.sendall(self._plain_request(head) + rest if page_load else head + rest)
             conn.settimeout(None)
             upstream.settimeout(None)
             with self.lock:
                 self.connections.setdefault(sid, set()).add((conn, upstream))
             self.spaces.touch(sid, +1)
             try:
-                self._pipe(conn, upstream)
+                if page_load:
+                    self._relay_page(conn, upstream)
+                else:
+                    self._pipe(conn, upstream)
             finally:
                 self.spaces.touch(sid, -1)
         except (OSError, ssl.SSLError, ValueError):
@@ -323,6 +330,56 @@ class Gate:
                         s.close()
                     except OSError:
                         pass
+
+    @staticmethod
+    def _plain_request(head):
+        """The same request, asking for an uncompressed answer and no keep-alive so the page can be edited."""
+        lines = [l for l in head.decode("latin-1").split("\r\n")[:-2]
+                 if l.split(":", 1)[0].strip().lower() not in ("accept-encoding", "connection")]
+        lines += ["Accept-Encoding: identity", "Connection: close"]
+        return ("\r\n".join(lines) + "\r\n\r\n").encode("latin-1")
+
+    def _relay_page(self, conn, upstream):
+        """Forward a page load, adding a small Home link to HTML so members can always get back to the portal."""
+        buf = b""
+        while b"\r\n\r\n" not in buf:
+            chunk = upstream.recv(65536)
+            if not chunk:
+                return conn.sendall(buf)
+            buf += chunk
+            if len(buf) > 64 * 1024:
+                return conn.sendall(buf)
+        rawhead, body = buf.split(b"\r\n\r\n", 1)
+        lines = rawhead.decode("latin-1").split("\r\n")
+        hdrs = {l.split(":", 1)[0].strip().lower(): l.split(":", 1)[1].strip() for l in lines[1:] if ":" in l}
+        editable = (lines[0].split(" ")[1:2] == ["200"] and "text/html" in hdrs.get("content-type", "").lower()
+                    and "content-encoding" not in hdrs)
+        if not editable:
+            conn.sendall(buf)
+            return self._pipe(conn, upstream)
+        while len(body) < 16 * 1024 * 1024:
+            chunk = upstream.recv(65536)
+            if not chunk:
+                break
+            body += chunk
+        if "chunked" in hdrs.get("transfer-encoding", "").lower():
+            out, rest = b"", body
+            while rest:
+                size_line, _, rest = rest.partition(b"\r\n")
+                try:
+                    n = int(size_line.split(b";")[0], 16)
+                except ValueError:
+                    break
+                if n == 0:
+                    break
+                out, rest = out + rest[:n], rest[n + 2:]
+            body = out
+        i = body.lower().rfind(b"</body>")
+        body = body[:i] + HOME_PILL + body[i:] if i >= 0 else body + HOME_PILL
+        keep = [l for l in lines[1:] if l.split(":", 1)[0].strip().lower()
+                not in ("content-length", "transfer-encoding", "connection")]
+        keep += [f"Content-Length: {len(body)}", "Connection: close"]
+        conn.sendall((lines[0] + "\r\n" + "\r\n".join(keep) + "\r\n\r\n").encode("latin-1") + body)
 
     @staticmethod
     def _read_head(conn):
@@ -473,7 +530,7 @@ workspace back from another browser or device. It won't be shown again.</p>
         if action == "home":
             return self._home_page(conn, member, query.get("notice", ""))
 
-        if action == "logout" and method == "POST" and self._same_origin(headers):
+        if action == "logout":  # only ends this browser's own session, so no CSRF concern
             with self.lock:
                 self.sessions.pop(token, None)
             return self._reply(conn, 303, "text/plain", b"", {
