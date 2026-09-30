@@ -1,0 +1,11 @@
+# Runtime data CodeGate writes next to server.py -- never commit these.
+
+# the local CA's private key and the gate's certificate
+/certs/
+
+# members, resume-code hashes, starter files
+/spaces/
+
+access.log
+__pycache__/
+.DS_Store
