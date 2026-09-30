@@ -32,6 +32,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       fonts-ubuntu ubuntu-wallpapers-noble python3-dbusmock \
     && rm -rf /var/lib/apt/lists/*
 
+# VS Code (Microsoft's tarball; the .deb is unusable here). --no-sandbox because the container has no
+# capabilities to give Chromium's sandbox; the container itself is the sandbox.
+RUN set -e; case "$(dpkg --print-architecture)" in arm64) A=arm64;; *) A=x64;; esac; \
+    curl -fL --retry 8 --retry-all-errors --connect-timeout 20 "https://update.code.visualstudio.com/latest/linux-$A/stable" -o /tmp/code.tgz \
+    && mkdir -p /opt/vscode && tar xzf /tmp/code.tgz -C /opt/vscode --strip-components=1 && rm /tmp/code.tgz \
+    && printf '#!/bin/sh\nexec /opt/vscode/bin/code --no-sandbox --password-store=basic "$@"\n' > /usr/local/bin/code && chmod 755 /usr/local/bin/code \
+    && printf '[Desktop Entry]\nName=Visual Studio Code\nComment=Code Editing. Redefined.\nExec=/usr/local/bin/code %%F\nIcon=/opt/vscode/resources/app/resources/linux/code.png\nType=Application\nCategories=Development;IDE;TextEditor;\nStartupWMClass=Code\nMimeType=text/plain;inode/directory;\n' > /usr/share/applications/code.desktop
+
 # Firefox's own content sandbox needs kernel features the locked-down container (no capabilities)
 # deliberately lacks; the container itself is the sandbox.
 ENV MOZ_DISABLE_CONTENT_SANDBOX=1 MOZ_DISABLE_GMP_SANDBOX=1
