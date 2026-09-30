@@ -15,6 +15,7 @@ import json
 import os
 import signal
 import socket
+import ssl
 import subprocess
 import sys
 import time
@@ -194,6 +195,25 @@ so trusting it can't be used to impersonate real websites.</p>
         self._json(result, 400 if "error" in result else 200)
 
 
+class DualProtocolServer(http.server.ThreadingHTTPServer):
+    """Answers plain HTTP and HTTPS on the same port. People type https:// on
+    what they were told was an address, and a plain-HTTP server answers that
+    with the browser's opaque ERR_SSL_PROTOCOL_ERROR. A TLS handshake always
+    starts with byte 0x16, so peek at it (in the request's own thread, so a
+    silent connection can't stall the accept loop)."""
+
+    def process_request_thread(self, request, client_address):
+        try:
+            request.settimeout(10)
+            if request.recv(1, socket.MSG_PEEK) == b"\x16":
+                request = GATE.tls_context().wrap_socket(request, server_side=True)
+            request.settimeout(None)
+        except (OSError, ssl.SSLError):
+            self.shutdown_request(request)
+            return
+        super().process_request_thread(request, client_address)
+
+
 def main():
     global SPACES, GATE
     SPACES = spaces.Spaces(BASE_DIR, log)
@@ -212,7 +232,7 @@ def main():
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
 
-    server = http.server.ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+    server = DualProtocolServer(("0.0.0.0", PORT), Handler)
     print(f"CodeGate listening on http://{_detect_lan_ip()}:{PORT} (gate on https port {gate.GATE_PORT} while a room is open)",
           file=sys.stderr)
     server.serve_forever()

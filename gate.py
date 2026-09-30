@@ -140,14 +140,18 @@ class Gate:
     def url(self):
         return f"https://{self.lan_ip()}:{GATE_PORT}/" if self.running() else None
 
+    def tls_context(self):
+        cert, key = self._ensure_leaf(self.lan_ip())
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+        ctx.load_cert_chain(str(cert), str(key))
+        return ctx
+
     def start(self):
         with self.lock:
             if self.listener:
                 return
-            cert, key = self._ensure_leaf(self.lan_ip())
-            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-            ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-            ctx.load_cert_chain(str(cert), str(key))
+            ctx = self.tls_context()
             listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             listener.bind(("0.0.0.0", GATE_PORT))
