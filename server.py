@@ -128,6 +128,13 @@ so trusting it can't be used to impersonate real websites.</p>
                     SPACES.start_runtime()
             elif action == "close":
                 SPACES.close_room(data.get("kind"))
+            elif action == "stop_room":
+                kind = data.get("kind")
+                SPACES.close_room(kind)
+                for m in SPACES.status()["members"]:
+                    if m["kind"] == kind and m["running"]:
+                        SPACES.stop_member(m["id"], "stopped from Dromac")
+                        GATE.drop_member(m["id"])
             elif action == "stop_all":
                 SPACES.stop_all("stopped from Dromac")
                 for kind in list(SPACES.state["rooms"]):

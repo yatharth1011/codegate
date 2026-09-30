@@ -9,8 +9,10 @@ download all of it as a zip.
 
 You open a **room**, share its **PIN**, and people join with a name.
 
-- **Two room types**, each with its own PIN: VS Code, or Ubuntu desktop (XFCE
-  in the browser, with a terminal, file manager, Firefox, Python and Jupyter).
+- **Two room types**, each with its own PIN: VS Code, or the real Ubuntu 24.04
+  desktop (GNOME Shell with the Ubuntu Dock, in the browser, with Terminal, Files,
+  Firefox, Python and Jupyter). It runs without systemd by giving GNOME a private
+  system bus with mocked login/power services, and renders in software.
 - **Starter files.** Point it at a folder and every member gets their own copy
   the first time they open their workspace. **Reset** restores the original.
 - **Yours to manage** from [Dromac](https://github.com/yatharth1011/dromac)'s

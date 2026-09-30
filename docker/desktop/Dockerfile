@@ -1,4 +1,4 @@
-# CodeGate desktop workspace: Ubuntu 24.04 + XFCE, served to the browser with
+# CodeGate desktop workspace: the real Ubuntu 24.04 desktop (GNOME Shell + Ubuntu Dock), served to the browser with
 # noVNC. Like the VS Code image, the entrypoint runs as root only long enough
 # to create the member's Unix user, then drops to that user with no
 # capabilities and no-new-privileges.
@@ -7,7 +7,7 @@ ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8
 
 RUN echo 'Acquire::Retries "8";' > /etc/apt/apt.conf.d/80-retries \
     && apt-get update && apt-get install -y --no-install-recommends \
-      xfce4 xfce4-terminal thunar mousepad dbus-x11 x11-xserver-utils xdg-utils \
+      dbus-x11 x11-xserver-utils xdg-utils \
       tigervnc-standalone-server tigervnc-common novnc websockify \
       fonts-dejavu fonts-noto-core fonts-jetbrains-mono adwaita-icon-theme yaru-theme-icon yaru-theme-gtk \
       python3 python3-pip python3-venv python3-dev python3-numpy python3-pandas python3-matplotlib \
@@ -21,10 +21,15 @@ RUN add-apt-repository -y ppa:mozillateam/ppa \
     && apt-get update && apt-get install -y --no-install-recommends firefox \
     && rm -rf /var/lib/apt/lists/*
 
-# What makes it look like Ubuntu: the Ubuntu font, the release wallpapers, and a
-# menu plugin for the "Activities" button (the Yaru theme itself is above).
+# The actual Ubuntu session. There is no systemd in a container, so startup gives GNOME a
+# private system bus with mocked login1/upower/polkit services (python3-dbusmock); rendering
+# is software (llvmpipe).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      fonts-ubuntu ubuntu-wallpapers-noble xfce4-whiskermenu-plugin \
+      gnome-shell gnome-session gnome-session-bin gnome-settings-daemon gnome-terminal nautilus gedit \
+      gnome-shell-extension-ubuntu-dock gnome-shell-extension-appindicator gnome-backgrounds \
+      yaru-theme-gnome-shell yaru-theme-sound ubuntu-session ubuntu-settings gnome-control-center \
+      mesa-utils libgl1-mesa-dri dconf-cli gsettings-desktop-schemas at-spi2-core \
+      fonts-ubuntu ubuntu-wallpapers-noble python3-dbusmock \
     && rm -rf /var/lib/apt/lists/*
 
 # Firefox's own content sandbox needs kernel features the locked-down container (no capabilities)
@@ -32,8 +37,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV MOZ_DISABLE_CONTENT_SANDBOX=1 MOZ_DISABLE_GMP_SANDBOX=1
 
 COPY entrypoint.sh /opt/codegate/entrypoint.sh
-COPY xstartup.sh /opt/codegate/xstartup.sh
-RUN chmod 755 /opt/codegate/entrypoint.sh /opt/codegate/xstartup.sh
+COPY xstartup.sh gnome-session.sh gnome-init.sh /opt/codegate/
+RUN chmod 755 /opt/codegate/*.sh
 
 WORKDIR /
 ENTRYPOINT ["/opt/codegate/entrypoint.sh"]
